@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #-----------------------------------------------------------------------------------------
 # Stormbot
 # A basic ChatGPT app that generates storm reports and cultural trivia.
