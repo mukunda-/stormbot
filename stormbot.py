@@ -21,7 +21,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 #-----------------------------------------------------------------------------------------
-import os, openai, re, feedparser, requests, sys, random
+import os, openai, re, feedparser, requests, sys, random, time
 from datetime import datetime, timedelta
 from dateutil.parser import parse as dateparse
 openai.organization = os.getenv("OPENAI_ORG")
@@ -68,11 +68,39 @@ def get_plain_text(url):
    except Exception as e:
       print("Failure getting plain text", e, file=sys.stderr)
       return ""
+   
+#-----------------------------------------------------------------------------------------
+def gpt_chat_completion(model, user, prompt, max_tokens, temperature=1.0):
+   print("Calling ChatGPT with prompt:", prompt)
+   
+   for retries in range(5):
+      try:
+         completion = openai.ChatCompletion.create(
+            model=model,
+            messages=[
+               {
+                  "role": "user",
+                  "content": prompt,
+                  "name": user
+               }
+            ],
+            max_tokens=max_tokens,
+            temperature=temperature)
+         return completion.choices[0].message.content
+         
+      except openai.RateLimitError as e:
+         print("Rate limit error", e, file=sys.stderr)
+         time.sleep(60 * 2 ^ retries)
+      except Exception as e:
+         print("Unexpected error", e, file=sys.stderr)
+         return "<Unexpected error!>"
+         
+   return "<Servers are busy!>"
 
 #-----------------------------------------------------------------------------------------
 # Fetch the storm report from ChatGPT.
 def get_storm_report():
-
+   print("Getting storm data...")
    # https://www.nhc.noaa.gov/aboutrss.shtml
    basic_feed_urls = [
       "https://www.nhc.noaa.gov/xml/TWOAT.xml",
@@ -104,60 +132,46 @@ Check the following tropical weather reports and discussions for any tropical cy
 {feed_content}
    """.strip()
 
-   print("STORM PROMPT\n", len(content), content)
-   # todo: backoff retry
-   completion = openai.ChatCompletion.create(
+   return gpt_chat_completion(
       model="gpt-3.5-turbo",
-      messages=[
-         {
-            "role": "user",
-            "content": content,
-            "name": "Weatherman"
-         }
-      ],
+      user="Weatherman",
+      prompt=content,
       max_tokens=1000,
       # I think a lower temperature here helps to not ignore hurricanes :)
       # Otherwise it has more freedom to make stuff up.
       temperature=0.25)
-   return completion.choices[0].message.content
 
 #-----------------------------------------------------------------------------------------
 # Generate some cultural trivia. The main variable is the month and day.
 def get_cultural_trivia():
-   
-   # Get the current month and day with no leading zeroes
+   print("Getting cultural trivia for next week...")
+
+   # Get the date of the next sunday with no leading zeroes on the day.
    now = datetime.now()
-   date = now.strftime("%B %d").replace(" 0", " ")
+   sunday = now + timedelta(days=(6 - now.weekday()))
+   date = sunday.strftime("%B %d").replace(" 0", " ")
 
    # I find that being direct (and not polite) helps to evade fluff from the response.
+   # ChatGPT has a bad habit of saying things are on the wrong date. Try to curb that
+   # too.
    content = f"""
 List 5 diversive cultural trivia that is related to the week starting on {date}. Do not mention events that are tied to a specific year. Do not mention any dates.
    """.strip()
 
-   completion = openai.ChatCompletion.create(
+   return gpt_chat_completion(
       model="gpt-3.5-turbo",
-      messages=[{
-         "role": "user",
-         "content": content,
-         "name": "DiversityBot"
-      }],
+      user="Diversity",
+      prompt=content,
       max_tokens=2000)
-   return completion.choices[0].message.content
 
 #-----------------------------------------------------------------------------------------
+# Unused. These were random words to seed the responses, but there were a couple of
+# problems:
+# - The words could be offensive, breaking the prompt.
+# - The words were too random, making things that sound weird or too much noise and
+#   nullifying the prompt (ending up with a basic prompt that does not result in much
+#   variation other than some accent words).
 def get_activity_inspiration():
-   # try:
-   #    content = requests.get("https://www.random-generator.org.uk/activity/").text
-
-   #    content = re.search(r'https://www\.random-generator\.org\.uk/covid-19/">Lockdown Activity Generator</a><br/><br/>(.*)<h2>Generate Some More</h2>', content)[1]
-
-   #    content = re.split(r'<br/>', content)
-   #    content = [i for i in content if i != '']
-   #    print("got inspo", content)
-   #    return "\n".join(content)
-   # except Exception as e:
-   #    print(e, file=sys.stderr)
-   #    return ""
    content = requests.get("https://random-word-api.herokuapp.com/word?number=3").json()
    content = ", ".join(content)
    return content
@@ -166,8 +180,7 @@ def get_activity_inspiration():
 def get_fun_activities():
    print("Generating activity...")
    # Get the current month and day with no leading zeroes
-   now = datetime.now()
-   month = now.strftime("%B")
+   month = datetime.now().strftime("%B")
 
    # Prompt to generate this: "Generate a list of 100 topics about hobbies."
    topic = random.choice([
@@ -179,20 +192,12 @@ def get_fun_activities():
 Generate for me a fun weekend activity that is related to {topic} and the month of {month}.
    """.strip()
 
-   print('Prompt:', content)
-
-   completion = openai.ChatCompletion.create(
+   return gpt_chat_completion(
       model="gpt-3.5-turbo",
-      messages=[
-         {
-            "role": "user",
-            "content": content,
-            "name": "InclusionBot"
-         }
-      ],
+      user="ActivityBot",
+      prompt=content,
       temperature=0.85,
       max_tokens=2000)
-   return completion.choices[0].message.content
 
 #-----------------------------------------------------------------------------------------
 digest = ""
