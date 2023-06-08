@@ -23,6 +23,7 @@
 # SOFTWARE.
 #-----------------------------------------------------------------------------------------
 import os, openai, re, feedparser, requests, sys, random, time
+from openai.error import RateLimitError
 from datetime import datetime, timedelta
 from dateutil.parser import parse as dateparse
 openai.organization = os.getenv("OPENAI_ORG")
@@ -89,7 +90,7 @@ def gpt_chat_completion(model, user, prompt, max_tokens, temperature=1.0):
             temperature=temperature)
          return completion.choices[0].message.content
          
-      except openai.RateLimitError as e:
+      except RateLimitError as e:
          print("Rate limit error", e, file=sys.stderr)
          time.sleep(60 * 2 ^ retries)
       except Exception as e:
@@ -228,7 +229,7 @@ def main():
 
    log("")
    log("")
-   log("*I do more than just report inclement weather. Learning about cultural trivia is a great way to expand diversity and inclusion in the workplace. Here are a few notes about this week:*")
+   log("*I do more than just report inclement weather. Learning about cultural trivia is a great way to support diversity and inclusion in the workplace. Here are a few notes about this week:*")
    log2(get_cultural_trivia())
 
    log("")
