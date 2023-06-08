@@ -28,6 +28,8 @@ openai.organization = os.getenv("OPENAI_ORG")
 openai.api_key = os.getenv("OPENAI_API_KEY")
 slack_webhook = os.getenv("STORMBOT_SLACK_WEBHOOK")
 
+VERSION = "1.0.0"
+
 #-----------------------------------------------------------------------------------------
 # Fetch the latest article description from an RSS feed.
 def read_latest_rss(url):
@@ -103,7 +105,7 @@ Check the following tropical weather reports and discussions for any tropical cy
    """.strip()
 
    print("STORM PROMPT\n", len(content), content)
-   
+   # todo: backoff retry
    completion = openai.ChatCompletion.create(
       model="gpt-3.5-turbo",
       messages=[
@@ -127,6 +129,7 @@ def get_cultural_trivia():
    now = datetime.now()
    date = now.strftime("%B %d").replace(" 0", " ")
 
+   # I find that being direct (and not polite) helps to evade fluff from the response.
    content = f"""
 List 5 diversive cultural trivia that is related to the week starting on {date}. Do not mention events that are tied to a specific year. Do not mention any dates.
    """.strip()
@@ -161,29 +164,22 @@ def get_activity_inspiration():
 
 #-----------------------------------------------------------------------------------------
 def get_fun_activities():
-   
+   print("Generating activity...")
    # Get the current month and day with no leading zeroes
    now = datetime.now()
    month = now.strftime("%B")
 
-   # ChatGPT: Generate a list of 100 topics about hobbies.
+   # Prompt to generate this: "Generate a list of 100 topics about hobbies."
    topic = random.choice([
       "photography","painting","gardening","cooking","writing","reading","fishing","knitting","sewing","pottery","woodworking","sculpting","playing a musical instrument","dancing","birdwatching","hiking","camping","cycling","running","yoga","meditation","sketching","calligraphy","graphic design","baking","cross-stitching","origami","embroidery","beekeeping","candle making","model building","coin collecting","stamp collecting","wine tasting","brewing beer","playing board games","chess","video gaming","archery","rock climbing","martial arts","magic tricks","singing","acting","stand-up comedy","cosplay","diy projects","scrapbooking","jewelry making","pottery","interior design","crossword puzzles","sudoku","home brewing","wine making","bird photography","beekeeping","creative writing","hiking and nature photography","soap making","kite flying","astronomy","collecting vintage items","geocaching","djing","making short films","wine pairing","brewing coffee","urban gardening","chess puzzles","stand-up paddleboarding","surfing","diy home improvement projects","rollerblading","jigsaw puzzles","coin flipping tricks","virtual reality gaming","quilting","photography editing and retouching","wood carving","digital art","comic book collecting","writing poetry","archery","playing card tricks","making homemade candles","terrarium gardening","toy collecting","marathon running","mountain biking","needle felting","card making","paper mache crafts","tea tasting","airbrush painting","photography composition techniques","dj mixing","stargazing","macrame","bonsai tree cultivation"
    ])
 
-   # content = f"""Plan 5 fun activities that we can do on the weekend starting on {date}. Base the activities upon the recommendations below. Don't state the recommendations directly, and don't state the given date either.
-   
-   # {get_activity_inspiration()}
-   # """
-
-#    content = f"""
-# Plan 5 fun weekend activities for the month of {month}. Reference the given list of words below to help decide on what activities to list. Ignore any words that would break your generation rules.
-
+   # "Generate for me" rather than asking a question resulted in more direct descriptions.
    content = f"""
-Generate for me a fun weekend activity that is related to {topic} and the month of {month}?
+Generate for me a fun weekend activity that is related to {topic} and the month of {month}.
    """.strip()
 
-   print('prompt:', content)
+   print('Prompt:', content)
 
    completion = openai.ChatCompletion.create(
       model="gpt-3.5-turbo",
@@ -194,45 +190,59 @@ Generate for me a fun weekend activity that is related to {topic} and the month 
             "name": "InclusionBot"
          }
       ],
+      temperature=0.85,
       max_tokens=2000)
    return completion.choices[0].message.content
 
 #-----------------------------------------------------------------------------------------
 digest = ""
+
+#-----------------------------------------------------------------------------------------
+# Append text to digest and print it to the console.
 def log(text):
    global digest
    digest = digest + text + "\n"
    print(text)
 
+#-----------------------------------------------------------------------------------------
+# Append text to digest and print it to the console.
+# For each line, prepend "> " to make it a quote.
 def log2(text):
    global digest
    digest = digest + "> " + text.replace("\n", "\n> ") + "\n"
    print(text)
+   
+#-----------------------------------------------------------------------------------------
+def main():
+   global digest
+   print("Stormbot", VERSION)
 
-log("*Beep boop! Here is your weekly tropical outlook report:*")
-log2(get_storm_report())
+   log("*Beep boop! Here is your weekly tropical outlook report:*")
+   log2(get_storm_report())
 
-# log("")
-# log("")
-# log("*I do more than just report inclement weather. Learning about cultural trivia is a great way to expand diversity and inclusion in the workplace. Here are a few notes about this week:*")
-# log2(get_cultural_trivia())
+   log("")
+   log("")
+   log("*I do more than just report inclement weather. Learning about cultural trivia is a great way to expand diversity and inclusion in the workplace. Here are a few notes about this week:*")
+   log2(get_cultural_trivia())
 
-# log("")
-# log("")
-# log("*If you are not busy evacuating for a hurricane, here is a fun and engaging weekend activity recommendation that I have generated for you:*")
-# log2(get_fun_activities())
+   log("")
+   log("")
+   log("*If you are not busy evacuating for a hurricane, here is a fun and engaging weekend activity that I have generated for you:*")
+   log2(get_fun_activities())
 
-# log("")
-# log("")
-# log("*I hope that you have a restful and relaxing break! See you next week—I am sure that it will be a productive one! Beep boop! ☺*")
+   log("")
+   log("")
+   log("*I hope that you have a restful and relaxing break! See you next week—I am sure that it will be a productive one! Beep boop! ☺*")
 
-print(requests.post(slack_webhook, json={
+   print(requests.post(slack_webhook, json={
+      "blocks": [{
+         "type": "section",
+         "text": {
+            "type": "mrkdwn",
+            "text": digest
+         }
+      }]
+   }))
 
-   "blocks": [{
-    	"type": "section",
-      "text": {
-         "type": "mrkdwn",
-         "text": digest
-      }
-   }]
-}))
+#-----------------------------------------------------------------------------------------
+if __name__ == "__main__": main()
