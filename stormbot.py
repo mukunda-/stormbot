@@ -22,7 +22,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 #-----------------------------------------------------------------------------------------
-import os, openai, re, feedparser, requests, sys, random, time
+import os, openai, re, feedparser, requests, sys, random, time, argparse
 from openai.error import RateLimitError
 from datetime import datetime, timedelta
 from dateutil.parser import parse as dateparse
@@ -72,20 +72,26 @@ def get_plain_text(url):
       return ""
    
 #-----------------------------------------------------------------------------------------
-def gpt_chat_completion(model, user, prompt, max_tokens, temperature=1.0):
+def gpt_chat_completion(model, prompt, max_tokens, temperature=1.0, system=None):
    print("Calling ChatGPT with prompt:", prompt)
    
+   messages = []
+   if system:
+      messages += [{
+         "role": "system",
+         "content": system,
+      }]
+
+   messages += [{
+      "role": "user",
+      "content": prompt,
+   }]
+
    for retries in range(5):
       try:
          completion = openai.ChatCompletion.create(
             model=model,
-            messages=[
-               {
-                  "role": "user",
-                  "content": prompt,
-                  "name": user
-               }
-            ],
+            messages=messages,
             max_tokens=max_tokens,
             temperature=temperature)
          return completion.choices[0].message.content
@@ -136,7 +142,7 @@ Check the following tropical weather reports and discussions for any tropical cy
 
    return gpt_chat_completion(
       model="gpt-3.5-turbo",
-      user="Weatherman",
+      system="You are a meteorologist.",
       prompt=content,
       max_tokens=1000,
       # I think a lower temperature here helps to not ignore hurricanes :)
@@ -157,12 +163,11 @@ def get_cultural_trivia():
    # ChatGPT has a bad habit of saying things are on the wrong date. Try to curb that
    # too.
    content = f"""
-List 5 diversive cultural trivia that is related to the week starting on {date}. Do not mention events that are tied to a specific year. Do not mention any dates.
+List 5 diversive cultural trivia that is related to the week starting on {date}. Do not mention any dates.
    """.strip()
 
    return gpt_chat_completion(
       model="gpt-3.5-turbo",
-      user="Diversity",
       prompt=content,
       max_tokens=2000)
 
@@ -179,7 +184,7 @@ def get_activity_inspiration():
    return content
 
 #-----------------------------------------------------------------------------------------
-def get_fun_activities():
+def get_fun_activity():
    print("Generating activity...")
    # Get the current month and day with no leading zeroes
    month = datetime.now().strftime("%B")
@@ -196,9 +201,8 @@ Generate for me a fun weekend activity that is related to {topic} and the month 
 
    return gpt_chat_completion(
       model="gpt-3.5-turbo",
-      user="ActivityBot",
       prompt=content,
-      temperature=0.85,
+      temperature=1,
       max_tokens=2000)
 
 #-----------------------------------------------------------------------------------------
@@ -218,12 +222,9 @@ def log2(text):
    global digest
    digest = digest + "> " + text.replace("\n", "\n> ") + "\n"
    print(text)
-   
-#-----------------------------------------------------------------------------------------
-def main():
-   global digest
-   print("Stormbot", VERSION)
 
+#-----------------------------------------------------------------------------------------
+def draft():
    log("*Beep boop! Here is your weekly tropical outlook report:*")
    log2(get_storm_report())
 
@@ -235,21 +236,69 @@ def main():
    log("")
    log("")
    log("*If you are not busy evacuating for a hurricane, here is a fun and engaging weekend activity that I have generated for you:*")
-   log2(get_fun_activities())
+   log2(get_fun_activity())
 
    log("")
    log("")
    log("*I hope that you have a restful and relaxing break! See you next week—I am sure that it will be a productive one! Beep boop! ☺*")
 
-   print(requests.post(slack_webhook, json={
+   with open("content/draft.md", "w", encoding="utf-8") as f:
+      f.write(digest)
+
+   print("Draft saved to content/draft.md. Publish with --publish.")
+
+#-----------------------------------------------------------------------------------------
+def send_md_to_slack(webhook, content):
+   print("Sending content to Slack...")
+   print(requests.post(webhook, json={
       "blocks": [{
          "type": "section",
          "text": {
             "type": "mrkdwn",
-            "text": digest
+            "text": content
          }
       }]
    }))
+
+#-----------------------------------------------------------------------------------------
+def publish():
+   if not os.path.exists("content/draft.md"):
+      print("No draft to publish.")
+      return
+   
+   with open("content/draft.md", "r", encoding="utf-8") as f:
+      content = f.read()
+   
+   send_md_to_slack(slack_webhook, content)
+
+   date = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+   os.rename("content/draft.md", f"content/{date}.md")
+   
+#-----------------------------------------------------------------------------------------
+def main():
+   global digest
+   print("Stormbot", VERSION)
+
+   os.makedirs("content", mode=0o770, exist_ok=True)
+   
+   parser = argparse.ArgumentParser()
+   parser.add_argument("--draft", action="store_true")
+   parser.add_argument("--publish", action="store_true")
+   args = parser.parse_args()
+
+   if not args.draft and not args.publish:
+      action = input("Draft or publish? ").strip().lower()
+      if action == "draft":
+         args.draft = True
+      elif action == "publish":
+         args.publish = True
+
+   if args.draft:
+      draft()
+   
+   if args.publish:
+      publish()
+
 
 #-----------------------------------------------------------------------------------------
 if __name__ == "__main__": main()
