@@ -229,17 +229,17 @@ def draft():
    log2(get_storm_report())
 
    log("")
-   log("")
+   log("##SECTION##")
    log("*I do more than just report inclement weather. Learning about cultural trivia is a great way to support diversity and inclusion in the workplace. Here are a few notes about this week:*")
    log2(get_cultural_trivia())
 
    log("")
-   log("")
+   log("##SECTION##")
    log("*If you are not busy evacuating for a hurricane, here is a fun and engaging weekend activity that I have generated for you:*")
    log2(get_fun_activity())
 
    log("")
-   log("")
+   log("##SECTION##")
    log("*I hope that you have a restful and relaxing break! See you next week—I am sure that it will be a productive one! Beep boop! ☺*")
 
    with open("content/draft.md", "w", encoding="utf-8") as f:
@@ -249,16 +249,26 @@ def draft():
 
 #-----------------------------------------------------------------------------------------
 def send_md_to_slack(webhook, content):
-   print("Sending content to Slack...")
-   print(requests.post(webhook, json={
-      "blocks": [{
+   content = content.split("##SECTION##")
+   blocks = []
+
+   for c in content:
+      if c.strip() == "": continue
+      blocks += [{
          "type": "section",
          "text": {
             "type": "mrkdwn",
-            "text": content
+            "text": c.strip()
          }
       }]
-   }))
+
+   print("Sending content to Slack...")
+   resp = requests.post(webhook, json={
+      "blocks": blocks
+   })
+
+   print(resp)
+   print(resp.text)
 
 #-----------------------------------------------------------------------------------------
 def publish():
